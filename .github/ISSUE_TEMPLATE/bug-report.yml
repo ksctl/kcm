@@ -1,0 +1,115 @@
+name: Bug Report
+description: "🐛 Report a bug to help us improve"
+title: "[Bug]: "
+labels: ["kind/bug", "needs-triage", "priority/high"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        # 🔍 Bug Report
+
+        Thank you for taking the time to report a bug! Your feedback helps make our project better.
+
+        > 💡 Before submitting, please search existing issues to avoid duplicates.
+
+        Please fill out the information below as detailed as possible.
+
+  - type: input
+    id: bug-title
+    attributes:
+      label: "📝 Bug Title"
+      description: "Give your bug a clear and descriptive title"
+      placeholder: "Example: CLI crashes when creating cluster with custom configuration"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: "🔄 Steps to Reproduce"
+      description: "Help us recreate the issue by providing detailed steps"
+      placeholder: |
+        1. Install ksctl version X.Y.Z
+        2. Run command `...`
+        3. Configure settings with...
+        4. Observe error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: "✅ Expected Behavior"
+      description: "What should have happened?"
+      placeholder: "Describe what you expected to happen when following the steps above"
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: "❌ Actual Behavior"
+      description: "What happened instead?"
+      placeholder: |
+        Describe what actually happened. If you have error messages or screenshots, please include them here.
+
+        ```
+        Include any error messages or logs here
+        ```
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: "🖥️ Environment"
+      description: |
+        Tell us about your environment (OS, software versions, etc.)
+      placeholder: "ksctl v1.3.0, Ubuntu 22.04, Docker 24.0.5"
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: "📎 Additional Context"
+      description: |
+        Add any other context, screenshots, or logs about the problem here.
+        Tip: You can attach images by dragging & dropping them into this field.
+      placeholder: "Share any additional information that might help us understand the issue better"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: affected-components
+    attributes:
+      label: "🎯 Affected Components"
+      description: "Which parts of the project are affected by this bug?"
+      options:
+        - label: "🖥️ CLI"
+        - label: "🎨 UI"
+        - label: "📚 Documentation"
+        - label: "🔧 Core Functionality"
+        - label: "🔌 Plugins/Extensions"
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: "✔️ Confirmations"
+      description: "Please confirm the following:"
+      options:
+        - label: "🔍 I have searched existing issues and verified this is a new bug"
+          required: true
+        - label: "💬 I will respond to questions and updates in this bug report"
+          required: true
+        - label: "📜 I have read and agree to follow the [Contribution Guidelines](https://docs.ksctl.com/docs/contribution-guidelines/)"
+          required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        👥 Our maintainers will review your bug report and get back to you as soon as possible.
+
+        ⭐ Thank you for contributing to make our project better!
