@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- manage_v1_clusteraddon.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples
