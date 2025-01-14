@@ -24,17 +24,13 @@ type AddonStatus string
 type CAddonStatus string
 
 const (
-	AddonStatusEnabled  AddonStatus = "Enabled"
-	AddonStatusDisabled AddonStatus = "Disabled"
-	AddonStatusUnknown  AddonStatus = "Unknown"
-
-	CAddonStatusEnabled  CAddonStatus = "Success"
-	CAddonStatusDisabled CAddonStatus = "Failed"
+	CAddonStatusSuccess CAddonStatus = "Success"
+	CAddonStatusFailure CAddonStatus = "Failed"
+	CAddonStatusPending CAddonStatus = "Pending"
 )
 
 type Addon struct {
-	Name   string      `json:"name"`
-	Status AddonStatus `json:"status"`
+	Name string `json:"name"`
 }
 
 // ClusterAddonSpec defines the desired state of ClusterAddon.
@@ -56,6 +52,7 @@ type ClusterAddonStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Cluster
 
 // ClusterAddon is the Schema for the clusteraddons API.
 type ClusterAddon struct {
