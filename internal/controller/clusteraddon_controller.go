@@ -18,8 +18,9 @@ package controller
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"slices"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -38,82 +39,109 @@ type ClusterAddonReconciler struct {
 // +kubebuilder:rbac:groups=manage.ksctl.com,resources=clusteraddons,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=manage.ksctl.com,resources=clusteraddons/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=manage.ksctl.com,resources=clusteraddons/finalizers,verbs=update
+// +kubebuilder:rbac:groups=*,resources=*,verbs=get;list;watch;create;update;patch;delete
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the ClusterAddon object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.19.4/pkg/reconcile
 func (r *ClusterAddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	l := log.FromContext(ctx)
+	l.Info("Reconciling ClusterAddon", "name", req.NamespacedName)
 
-	l.Info("Reconciling ClusterAddon", "name", req.NamespacedName, "namespace", req.Namespace) // TODO: need it non-namespace based resource
-
-	// Fetch the ClusterAddon instance
+	// Get the ClusterAddon instance
 	instance := &managev1.ClusterAddon{}
-	err := r.Get(ctx, req.NamespacedName, instance)
-	if err != nil {
+	if err := r.Get(ctx, req.NamespacedName, instance); err != nil {
+		if client.IgnoreNotFound(err) == nil {
+			return ctrl.Result{}, nil // Object deleted, no requeue
+		}
 		l.Error(err, "Failed to get ClusterAddon")
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		return ctrl.Result{RequeueAfter: time.Second * 10}, err
 	}
+
 	if instance.Status.StatusCode == "" {
 		instance.Status.StatusCode = managev1.CAddonStatusPending
-		_ = r.Status().Update(ctx, instance)
+		if err := r.Status().Update(ctx, instance); err != nil {
+			l.Error(err, "Failed to update initial status")
+			return ctrl.Result{RequeueAfter: time.Second * 5}, err
+		}
 	}
 
-	if instance.DeletionTimestamp.IsZero() { // no deletion
-		if !slices.Contains(instance.Finalizers, "finalizer.manage.ksctl.com") {
-			instance.Finalizers = append(instance.Finalizers, "finalizer.manage.ksctl.com")
-			if err := r.Update(ctx, instance); err != nil {
-				return ctrl.Result{}, err
-			}
-		} else {
-			for _, addon := range instance.Spec.Addons {
+	if !instance.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, instance)
+	}
 
-				switch addon.Name {
-				case string(AddonSKUStack):
-					l.Info("Processing addon", "name", addon.Name)
-					if errAddon := r.HandleAddon(ctx, addon.Name); errAddon != nil {
-						l.Error(errAddon, "Failed to handle addon", "name", addon.Name)
-						instance.Status.StatusCode = managev1.CAddonStatusFailure
-						instance.Status.ReasonOfFailure = "Failed to handle addon " + addon.Name
-						_ = r.Status().Update(ctx, instance)
-						return ctrl.Result{}, nil
-					}
+	if !slices.Contains(instance.Finalizers, "finalizer.manage.ksctl.com") {
+		return r.addFinalizer(ctx, instance)
+	}
 
-				default:
-					l.Error(errors.New("NOT_FOUND"), "Addon not found", "name", addon.Name)
-					instance.Status.StatusCode = managev1.CAddonStatusFailure
-					instance.Status.ReasonOfFailure = "Addon not found but got " + addon.Name
-					_ = r.Status().Update(ctx, instance)
-					return ctrl.Result{}, nil
-				}
-			}
-			instance.Status.StatusCode = managev1.CAddonStatusSuccess
-			_ = r.Status().Update(ctx, instance)
-		}
+	// Process addons
+	return r.processAddons(ctx, instance)
+}
 
-	} else {
-		if slices.Contains(instance.Finalizers, "finalizer.manage.ksctl.com") {
-			if err := r.HandleAddonDelete(ctx); err != nil {
-				l.Error(err, "Failed to handle finalizer")
-				return ctrl.Result{}, err
-			}
-		}
+func (r *ClusterAddonReconciler) handleDeletion(ctx context.Context, instance *managev1.ClusterAddon) (ctrl.Result, error) {
+	l := log.FromContext(ctx)
 
-		l.Info("Uninstall Addons was successful")
+	if !slices.Contains(instance.Finalizers, "finalizer.manage.ksctl.com") {
+		return ctrl.Result{}, nil
+	}
 
-		instance.ObjectMeta.Finalizers = removeString(instance.ObjectMeta.Finalizers, "finalizer.manage.ksctl.com")
-		if err := r.Update(ctx, instance); err != nil { // Use the correct context
-			return ctrl.Result{}, err
-		}
+	if err := r.HandleAddonDelete(ctx); err != nil {
+		l.Error(err, "Failed to cleanup addons")
+		return ctrl.Result{RequeueAfter: time.Second * 10}, err
+	}
+
+	instance.Finalizers = removeString(instance.Finalizers, "finalizer.manage.ksctl.com")
+	if err := r.Update(ctx, instance); err != nil {
+		l.Error(err, "Failed to remove finalizer")
+		return ctrl.Result{RequeueAfter: time.Second * 5}, err
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *ClusterAddonReconciler) addFinalizer(ctx context.Context, instance *managev1.ClusterAddon) (ctrl.Result, error) {
+	instance.Finalizers = append(instance.Finalizers, "finalizer.manage.ksctl.com")
+	if err := r.Update(ctx, instance); err != nil {
+		return ctrl.Result{RequeueAfter: time.Second * 5}, err
+	}
+	return ctrl.Result{Requeue: true}, nil
+}
+
+func (r *ClusterAddonReconciler) processAddons(ctx context.Context, instance *managev1.ClusterAddon) (ctrl.Result, error) {
+	l := log.FromContext(ctx)
+
+	for _, addon := range instance.Spec.Addons {
+		if err := r.validateAndProcessAddon(ctx, addon); err != nil {
+			l.Error(err, "Failed to process addon", "name", addon.Name)
+			instance.Status.StatusCode = managev1.CAddonStatusFailure
+			instance.Status.ReasonOfFailure = fmt.Sprintf("Failed to process addon %s: %w", addon.Name, err)
+			if updateErr := r.Status().Update(ctx, instance); updateErr != nil {
+				l.Error(updateErr, "Failed to update failure status")
+			}
+			return ctrl.Result{RequeueAfter: time.Second * 30}, err
+		}
+	}
+
+	// Update success status
+	instance.Status.StatusCode = managev1.CAddonStatusSuccess
+	instance.Status.ReasonOfFailure = ""
+	if err := r.Status().Update(ctx, instance); err != nil {
+		l.Error(err, "Failed to update success status")
+		return ctrl.Result{RequeueAfter: time.Second * 5}, err
+	}
+
+	return ctrl.Result{RequeueAfter: time.Minute * 5}, nil // Periodic reconciliation
+}
+
+func (r *ClusterAddonReconciler) validateAndProcessAddon(ctx context.Context, addon managev1.Addon) error {
+
+	keys := make([]string, 0, len(addonManifests))
+	for k := range addonManifests {
+		keys = append(keys, k)
+	}
+
+	if !slices.Contains(keys, string(addon.Name)) {
+		return fmt.Errorf("unsupported addon: %s", addon.Name)
+	}
+
+	return r.HandleAddon(ctx, addon.Name)
 }
 
 func removeString(slice []string, s string) (result []string) {
