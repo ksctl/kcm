@@ -22,6 +22,9 @@ import (
 	"slices"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/client-go/dynamic"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -33,7 +36,9 @@ import (
 // ClusterAddonReconciler reconciles a ClusterAddon object
 type ClusterAddonReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	DynamicClient dynamic.Interface
+	RESTMapper    meta.RESTMapper
+	Scheme        *runtime.Scheme
 }
 
 // +kubebuilder:rbac:groups=manage.ksctl.com,resources=clusteraddons,verbs=get;list;watch;create;update;patch;delete
@@ -111,11 +116,11 @@ func (r *ClusterAddonReconciler) processAddons(ctx context.Context, instance *ma
 		if err := r.validateAndProcessAddon(ctx, addon); err != nil {
 			l.Error(err, "Failed to process addon", "name", addon.Name)
 			instance.Status.StatusCode = managev1.CAddonStatusFailure
-			instance.Status.ReasonOfFailure = fmt.Sprintf("Failed to process addon %s: %w", addon.Name, err)
+			instance.Status.ReasonOfFailure = fmt.Sprintf("Failed to process addon %s: %v", addon.Name, err)
 			if updateErr := r.Status().Update(ctx, instance); updateErr != nil {
 				l.Error(updateErr, "Failed to update failure status")
 			}
-			return ctrl.Result{RequeueAfter: time.Second * 30}, err
+			return ctrl.Result{RequeueAfter: time.Second * 30, Requeue: true}, err
 		}
 	}
 
@@ -137,7 +142,7 @@ func (r *ClusterAddonReconciler) validateAndProcessAddon(ctx context.Context, ad
 		keys = append(keys, k)
 	}
 
-	if !slices.Contains(keys, string(addon.Name)) {
+	if !slices.Contains(keys, addon.Name) {
 		return fmt.Errorf("unsupported addon: %s", addon.Name)
 	}
 

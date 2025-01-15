@@ -19,6 +19,7 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"k8s.io/client-go/dynamic"
 	"os"
 	"path/filepath"
 
@@ -203,8 +204,10 @@ func main() {
 	}
 
 	if err = (&controller.ClusterAddonReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:        mgr.GetClient(),
+		DynamicClient: dynamic.NewForConfigOrDie(mgr.GetConfig()),
+		RESTMapper:    mgr.GetRESTMapper(),
+		Scheme:        mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ClusterAddon")
 		os.Exit(1)
