@@ -3,8 +3,11 @@ package controller
 import (
 	"context"
 	"fmt"
-	"github.com/gookit/goutil/dump"
 	"io"
+	"net/http"
+	"time"
+
+	"github.com/gookit/goutil/dump"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -13,9 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/util/retry"
-	"net/http"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"time"
 )
 
 type AddonManifest struct {
@@ -33,15 +34,6 @@ var addonManifests = map[string]AddonManifest{
 	},
 }
 
-func NewAddonData() *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kcm-addons",
-			Namespace: "ksctl-system",
-		},
-	}
-}
-
 func (r *ClusterAddonReconciler) CreateNamespaceIfNotExists(ctx context.Context, namespace string) error {
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
@@ -57,8 +49,29 @@ func (r *ClusterAddonReconciler) CreateNamespaceIfNotExists(ctx context.Context,
 	return nil
 }
 
+func (r *ClusterAddonReconciler) DeleteNamespaceIfExists(ctx context.Context, namespace string) error {
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: namespace,
+		},
+	}
+	if err := r.Get(ctx, client.ObjectKey{Name: namespace}, ns); err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	return r.Delete(ctx, ns)
+}
+
 func (r *ClusterAddonReconciler) GetData(ctx context.Context) (*corev1.ConfigMap, error) {
-	cf := NewAddonData()
+	cf := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kcm-addons",
+			Namespace: "ksctl-system",
+		},
+		Data: map[string]string{},
+	}
 	err := r.Get(ctx, client.ObjectKey{Namespace: cf.Namespace, Name: cf.Name}, cf)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -68,8 +81,9 @@ func (r *ClusterAddonReconciler) GetData(ctx context.Context) (*corev1.ConfigMap
 	}
 
 	if cf.Data == nil {
-		cf.Data = make(map[string]string)
+		cf.Data = map[string]string{}
 	}
+
 	return cf, nil
 }
 
@@ -98,7 +112,7 @@ func (r *ClusterAddonReconciler) HandleAddon(ctx context.Context, addonName stri
 		return nil
 	}
 
-	fmt.Println("##########", cf.Data, addonName, manifest)
+	fmt.Println("~~>", cf.Data, addonName, manifest)
 
 	if manifest.Namespace != nil {
 		if err := r.CreateNamespaceIfNotExists(ctx, *manifest.Namespace); err != nil {
@@ -106,18 +120,46 @@ func (r *ClusterAddonReconciler) HandleAddon(ctx context.Context, addonName stri
 		}
 	}
 
-	if err := r.downloadAndApplyManifests(ctx, manifest); err != nil {
+	if err := r.downloadAndOperateManifests(ctx, manifest, r.applyResource); err != nil {
 		return fmt.Errorf("failed to install addon %s: %w", addonName, err)
 	}
 
-	return r.updateAddonStatus(ctx, cf, addonName)
+	return r.updateAddonStatus(ctx, cf, addonName, false)
 }
 
-func (r *ClusterAddonReconciler) HandleAddonDelete(ctx context.Context) error {
-	return nil
+func (r *ClusterAddonReconciler) HandleAddonDelete(ctx context.Context, addonName string) error {
+	cf, err := r.GetData(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get/create config map: %w", err)
+	}
+
+	if _, installed := cf.Data[addonName]; !installed {
+		return nil
+	}
+
+	manifest, ok := addonManifests[addonName]
+	if !ok {
+		return fmt.Errorf("addon %s not found in manifest registry", addonName)
+	}
+
+	if err := r.downloadAndOperateManifests(ctx, manifest, r.deleteResource); err != nil {
+		return fmt.Errorf("failed to uninstall addon %s: %w", addonName, err)
+	}
+
+	if manifest.Namespace != nil {
+		if err := r.DeleteNamespaceIfExists(ctx, *manifest.Namespace); err != nil {
+			return fmt.Errorf("failed to delete namespace for ADDON %s: %w", *manifest.Namespace, err)
+		}
+	}
+
+	return r.updateAddonStatus(ctx, cf, addonName, true)
 }
 
-func (r *ClusterAddonReconciler) downloadAndApplyManifests(ctx context.Context, manifest AddonManifest) error {
+func (r *ClusterAddonReconciler) downloadAndOperateManifests(
+	ctx context.Context,
+	manifest AddonManifest,
+	operator func(ctx context.Context, obj *unstructured.Unstructured) error,
+) error {
 	resp, err := http.Get(manifest.URL)
 	if err != nil {
 		return fmt.Errorf("failed to download manifest: %w", err)
@@ -154,11 +196,46 @@ func (r *ClusterAddonReconciler) downloadAndApplyManifests(ctx context.Context, 
 			return fmt.Errorf("manifest missing apiVersion or kind")
 		}
 
-		if err := r.applyResource(ctx, obj); err != nil {
+		if err := operator(ctx, obj); err != nil {
 			return fmt.Errorf("failed to apply resource %s/%s: %w",
 				obj.GetNamespace(), obj.GetName(), err)
 		}
 	}
+
+	return nil
+}
+
+func (r *ClusterAddonReconciler) deleteResource(ctx context.Context, obj *unstructured.Unstructured) error {
+	// Get the GVK for the resource
+	gvk := obj.GroupVersionKind()
+
+	// Get the corresponding REST mapping
+	mapping, err := r.RESTMapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+	if err != nil {
+		return fmt.Errorf("failed to get REST mapping: %w", err)
+	}
+
+	// Create dynamic resource interface
+	var dr dynamic.ResourceInterface
+	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+		// Namespaced resources
+		dr = r.DynamicClient.Resource(mapping.Resource).Namespace(obj.GetNamespace())
+	} else {
+		// Cluster-scoped resources
+		dr = r.DynamicClient.Resource(mapping.Resource)
+	}
+
+	// Apply the resource using server-side apply
+	opts := metav1.DeleteOptions{}
+
+	err = dr.Delete(ctx, obj.GetName(), opts)
+	if err != nil {
+		fmt.Println("########### Failed to delete resource", obj.GetNamespace(), obj.GetName())
+		dump.Println(obj)
+		return fmt.Errorf("failed to delete resource: %w", err)
+	}
+
+	fmt.Println("########### Delete resource", obj.GetNamespace(), obj.GetName())
 
 	return nil
 }
@@ -201,9 +278,13 @@ func (r *ClusterAddonReconciler) applyResource(ctx context.Context, obj *unstruc
 	return nil
 }
 
-func (r *ClusterAddonReconciler) updateAddonStatus(ctx context.Context, cf *corev1.ConfigMap, addonName string) error {
+func (r *ClusterAddonReconciler) updateAddonStatus(ctx context.Context, cf *corev1.ConfigMap, addonName string, isDelete bool) error {
 	return retry.OnError(retry.DefaultRetry, errors.IsConflict, func() error {
-		cf.Data[addonName] = fmt.Sprintf("installed@%s", time.Now().Format(time.RFC3339))
+		if isDelete {
+			delete(cf.Data, addonName)
+		} else {
+			cf.Data[addonName] = fmt.Sprintf("installed@%s", time.Now().Format(time.RFC3339))
+		}
 		return r.Update(ctx, cf)
 	})
 }

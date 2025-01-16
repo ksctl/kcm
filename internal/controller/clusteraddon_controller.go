@@ -87,9 +87,16 @@ func (r *ClusterAddonReconciler) handleDeletion(ctx context.Context, instance *m
 		return ctrl.Result{}, nil
 	}
 
-	if err := r.HandleAddonDelete(ctx); err != nil {
-		l.Error(err, "Failed to cleanup addons")
-		return ctrl.Result{RequeueAfter: time.Second * 10}, err
+	for _, addon := range instance.Spec.Addons {
+		if err := r.validateAndProcessAddon(ctx, addon, r.HandleAddonDelete); err != nil {
+			l.Error(err, "Failed to process addon", "name", addon.Name)
+			instance.Status.StatusCode = managev1.CAddonStatusFailure
+			instance.Status.ReasonOfFailure = fmt.Sprintf("Failed to process addon %s: %v", addon.Name, err)
+			if updateErr := r.Status().Update(ctx, instance); updateErr != nil {
+				l.Error(updateErr, "Failed to update failure status")
+			}
+			return ctrl.Result{RequeueAfter: time.Second * 30, Requeue: true}, err
+		}
 	}
 
 	instance.Finalizers = removeString(instance.Finalizers, "finalizer.manage.ksctl.com")
@@ -113,7 +120,7 @@ func (r *ClusterAddonReconciler) processAddons(ctx context.Context, instance *ma
 	l := log.FromContext(ctx)
 
 	for _, addon := range instance.Spec.Addons {
-		if err := r.validateAndProcessAddon(ctx, addon); err != nil {
+		if err := r.validateAndProcessAddon(ctx, addon, r.HandleAddon); err != nil {
 			l.Error(err, "Failed to process addon", "name", addon.Name)
 			instance.Status.StatusCode = managev1.CAddonStatusFailure
 			instance.Status.ReasonOfFailure = fmt.Sprintf("Failed to process addon %s: %v", addon.Name, err)
@@ -135,7 +142,11 @@ func (r *ClusterAddonReconciler) processAddons(ctx context.Context, instance *ma
 	return ctrl.Result{RequeueAfter: time.Minute * 5}, nil // Periodic reconciliation
 }
 
-func (r *ClusterAddonReconciler) validateAndProcessAddon(ctx context.Context, addon managev1.Addon) error {
+func (r *ClusterAddonReconciler) validateAndProcessAddon(
+	ctx context.Context,
+	addon managev1.Addon,
+	process func(ctx context.Context, addonName string) error,
+) error {
 
 	keys := make([]string, 0, len(addonManifests))
 	for k := range addonManifests {
@@ -146,7 +157,7 @@ func (r *ClusterAddonReconciler) validateAndProcessAddon(ctx context.Context, ad
 		return fmt.Errorf("unsupported addon: %s", addon.Name)
 	}
 
-	return r.HandleAddon(ctx, addon.Name)
+	return process(ctx, addon.Name)
 }
 
 func removeString(slice []string, s string) (result []string) {
