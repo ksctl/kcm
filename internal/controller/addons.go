@@ -164,7 +164,9 @@ func (r *ClusterAddonReconciler) downloadAndOperateManifests(
 	if err != nil {
 		return fmt.Errorf("failed to download manifest: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to download manifest, status: %d", resp.StatusCode)
