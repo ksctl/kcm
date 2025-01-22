@@ -19,18 +19,35 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+type AddonURL func(version *string) string
+
 type AddonManifest struct {
-	URL       string
+	URL       AddonURL
 	Namespace *string
 }
 
 var addonManifests = map[string]AddonManifest{
-	"stack": {
-		URL: "https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml",
+	"argocd": {
+		URL: func(version *string) string {
+			v := "latest"
+			if version != nil {
+				v = *version
+			}
+			return fmt.Sprintf("https://raw.githubusercontent.com/argoproj/argo-cd/%s/manifests/install.yaml", v)
+		},
 		Namespace: func() *string {
 			x := "argocd"
 			return &x
 		}(),
+	},
+	"stack": {
+		URL: func(version *string) string {
+			v := "latest"
+			if version != nil {
+				v = *version
+			}
+			return fmt.Sprintf("https://github.com/ksctl/ka/releases/download/%s/install.yml", v)
+		},
 	},
 }
 
@@ -97,7 +114,7 @@ func (r *ClusterAddonReconciler) UpdateData(ctx context.Context, cf *corev1.Conf
 	return nil
 }
 
-func (r *ClusterAddonReconciler) HandleAddon(ctx context.Context, addonName string) error {
+func (r *ClusterAddonReconciler) HandleAddon(ctx context.Context, addonName string, addonVer *string) error {
 	manifest, ok := addonManifests[addonName]
 	if !ok {
 		return fmt.Errorf("addon %s not found in manifest registry", addonName)
@@ -120,14 +137,14 @@ func (r *ClusterAddonReconciler) HandleAddon(ctx context.Context, addonName stri
 		}
 	}
 
-	if err := r.downloadAndOperateManifests(ctx, manifest, r.applyResource); err != nil {
+	if err := r.downloadAndOperateManifests(ctx, manifest, r.applyResource, addonVer); err != nil {
 		return fmt.Errorf("failed to install addon %s: %w", addonName, err)
 	}
 
 	return r.updateAddonStatus(ctx, cf, addonName, false)
 }
 
-func (r *ClusterAddonReconciler) HandleAddonDelete(ctx context.Context, addonName string) error {
+func (r *ClusterAddonReconciler) HandleAddonDelete(ctx context.Context, addonName string, addonVer *string) error {
 	cf, err := r.GetData(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get/create config map: %w", err)
@@ -142,7 +159,7 @@ func (r *ClusterAddonReconciler) HandleAddonDelete(ctx context.Context, addonNam
 		return fmt.Errorf("addon %s not found in manifest registry", addonName)
 	}
 
-	if err := r.downloadAndOperateManifests(ctx, manifest, r.deleteResource); err != nil {
+	if err := r.downloadAndOperateManifests(ctx, manifest, r.deleteResource, addonVer); err != nil {
 		return fmt.Errorf("failed to uninstall addon %s: %w", addonName, err)
 	}
 
@@ -159,8 +176,9 @@ func (r *ClusterAddonReconciler) downloadAndOperateManifests(
 	ctx context.Context,
 	manifest AddonManifest,
 	operator func(ctx context.Context, obj *unstructured.Unstructured) error,
+	version *string,
 ) error {
-	resp, err := http.Get(manifest.URL)
+	resp, err := http.Get(manifest.URL(version))
 	if err != nil {
 		return fmt.Errorf("failed to download manifest: %w", err)
 	}

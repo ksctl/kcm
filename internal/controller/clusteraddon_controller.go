@@ -145,7 +145,7 @@ func (r *ClusterAddonReconciler) processAddons(ctx context.Context, instance *ma
 func (r *ClusterAddonReconciler) validateAndProcessAddon(
 	ctx context.Context,
 	addon managev1.Addon,
-	process func(ctx context.Context, addonName string) error,
+	process func(ctx context.Context, addonName string, addonVer *string) error,
 ) error {
 
 	keys := make([]string, 0, len(addonManifests))
@@ -157,7 +157,7 @@ func (r *ClusterAddonReconciler) validateAndProcessAddon(
 		return fmt.Errorf("unsupported addon: %s", addon.Name)
 	}
 
-	return process(ctx, addon.Name)
+	return process(ctx, addon.Name, addon.Version)
 }
 
 func removeString(slice []string, s string) (result []string) {

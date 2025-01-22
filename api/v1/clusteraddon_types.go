@@ -30,7 +30,8 @@ const (
 )
 
 type Addon struct {
-	Name string `json:"name"`
+	Name    string  `json:"name"`
+	Version *string `json:"version,omitempty"`
 }
 
 // ClusterAddonSpec defines the desired state of ClusterAddon.
