@@ -29,7 +29,7 @@ type AddonManifest struct {
 var addonManifests = map[string]AddonManifest{
 	"argocd": {
 		URL: func(version *string) string {
-			v := "latest"
+			v := "stable"
 			if version != nil {
 				v = *version
 			}
@@ -89,14 +89,23 @@ func (r *ClusterAddonReconciler) GetData(ctx context.Context) (*corev1.ConfigMap
 		},
 		Data: map[string]string{},
 	}
-	err := r.Get(ctx, client.ObjectKey{Namespace: cf.Namespace, Name: cf.Name}, cf)
-	if err != nil {
+
+	if err := r.Get(ctx, client.ObjectKey{Namespace: cf.Namespace, Name: cf.Name}, cf); err != nil {
 		if errors.IsNotFound(err) {
-			err = r.Create(ctx, cf)
+			cf = &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kcm-addons",
+					Namespace: "ksctl-system",
+				},
+				Data: map[string]string{},
+			}
+			if err := r.Create(ctx, cf); err != nil {
+				return nil, err
+			}
+			return cf, nil
 		}
 		return nil, err
 	}
-
 	if cf.Data == nil {
 		cf.Data = map[string]string{}
 	}
@@ -303,6 +312,9 @@ func (r *ClusterAddonReconciler) updateAddonStatus(ctx context.Context, cf *core
 		if isDelete {
 			delete(cf.Data, addonName)
 		} else {
+			if cf.Data == nil {
+				cf.Data = map[string]string{}
+			}
 			cf.Data[addonName] = fmt.Sprintf("installed@%s", time.Now().Format(time.RFC3339))
 		}
 		return r.Update(ctx, cf)

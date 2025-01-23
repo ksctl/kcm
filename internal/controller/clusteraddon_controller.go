@@ -41,6 +41,8 @@ type ClusterAddonReconciler struct {
 	Scheme        *runtime.Scheme
 }
 
+const managerFinalizer string = "finalizer.manage.ksctl.com"
+
 // +kubebuilder:rbac:groups=manage.ksctl.com,resources=clusteraddons,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=manage.ksctl.com,resources=clusteraddons/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=manage.ksctl.com,resources=clusteraddons/finalizers,verbs=update
@@ -72,18 +74,17 @@ func (r *ClusterAddonReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.handleDeletion(ctx, instance)
 	}
 
-	if !slices.Contains(instance.Finalizers, "finalizer.manage.ksctl.com") {
+	if !slices.Contains(instance.Finalizers, managerFinalizer) {
 		return r.addFinalizer(ctx, instance)
 	}
 
-	// Process addons
 	return r.processAddons(ctx, instance)
 }
 
 func (r *ClusterAddonReconciler) handleDeletion(ctx context.Context, instance *managev1.ClusterAddon) (ctrl.Result, error) {
 	l := log.FromContext(ctx)
 
-	if !slices.Contains(instance.Finalizers, "finalizer.manage.ksctl.com") {
+	if !slices.Contains(instance.Finalizers, managerFinalizer) {
 		return ctrl.Result{}, nil
 	}
 
@@ -99,8 +100,7 @@ func (r *ClusterAddonReconciler) handleDeletion(ctx context.Context, instance *m
 		}
 	}
 
-	instance.Finalizers = removeString(instance.Finalizers, "finalizer.manage.ksctl.com")
-	if err := r.Update(ctx, instance); err != nil {
+	if _, err := r.removeFinalizer(ctx, instance); err != nil {
 		l.Error(err, "Failed to remove finalizer")
 		return ctrl.Result{RequeueAfter: time.Second * 5}, err
 	}
@@ -109,11 +109,31 @@ func (r *ClusterAddonReconciler) handleDeletion(ctx context.Context, instance *m
 }
 
 func (r *ClusterAddonReconciler) addFinalizer(ctx context.Context, instance *managev1.ClusterAddon) (ctrl.Result, error) {
-	instance.Finalizers = append(instance.Finalizers, "finalizer.manage.ksctl.com")
+	instance.Finalizers = append(instance.Finalizers, managerFinalizer)
 	if err := r.Update(ctx, instance); err != nil {
 		return ctrl.Result{RequeueAfter: time.Second * 5}, err
 	}
 	return ctrl.Result{Requeue: true}, nil
+}
+
+func (r *ClusterAddonReconciler) removeFinalizer(ctx context.Context, instance *managev1.ClusterAddon) (ctrl.Result, error) {
+	if !slices.Contains(instance.Finalizers, managerFinalizer) {
+		return ctrl.Result{}, nil
+	}
+
+	var v []string
+
+	for _, f := range instance.Finalizers {
+		if f != managerFinalizer {
+			v = append(v, f)
+		}
+	}
+
+	instance.Finalizers = v
+	if err := r.Update(ctx, instance); err != nil {
+		return ctrl.Result{RequeueAfter: time.Second * 5}, err
+	}
+	return ctrl.Result{}, nil
 }
 
 func (r *ClusterAddonReconciler) processAddons(ctx context.Context, instance *managev1.ClusterAddon) (ctrl.Result, error) {
@@ -148,25 +168,11 @@ func (r *ClusterAddonReconciler) validateAndProcessAddon(
 	process func(ctx context.Context, addonName string, addonVer *string) error,
 ) error {
 
-	keys := make([]string, 0, len(addonManifests))
-	for k := range addonManifests {
-		keys = append(keys, k)
-	}
-
-	if !slices.Contains(keys, addon.Name) {
+	if _, present := addonManifests[addon.Name]; !present {
 		return fmt.Errorf("unsupported addon: %s", addon.Name)
 	}
 
 	return process(ctx, addon.Name, addon.Version)
-}
-
-func removeString(slice []string, s string) (result []string) {
-	for _, item := range slice {
-		if item != s {
-			result = append(result, item)
-		}
-	}
-	return
 }
 
 // SetupWithManager sets up the controller with the Manager.

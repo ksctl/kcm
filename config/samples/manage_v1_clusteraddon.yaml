@@ -7,5 +7,4 @@ metadata:
   name: clusteraddon-sample
 spec:
   addons:
-    - name: stack
-  # TODO(user): Add fields here
+    - name: argocd
