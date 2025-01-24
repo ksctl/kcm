@@ -1,10 +1,10 @@
-![CoverPage Social Media](./assets/img/cover.svg)
+![CoverPage Social Media](https://raw.githubusercontent.com/ksctl/ksctl/refs/heads/main/img/cover.svg)
 
 Here's a boilerplate README for your GitHub repository:  
 
 ---
 
-# Ksctl Management Operator
+# Ksctl Cluster Manager Operator
 
 A Kubernetes operator for managing `ksctl` resources.
 

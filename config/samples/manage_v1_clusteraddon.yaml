@@ -1,0 +1,10 @@
+apiVersion: manage.ksctl.com/v1
+kind: ClusterAddon
+metadata:
+  labels:
+    app.kubernetes.io/name: kcm
+    app.kubernetes.io/managed-by: kustomize
+  name: clusteraddon-sample
+spec:
+  addons:
+    - name: argocd
