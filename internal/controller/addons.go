@@ -27,19 +27,6 @@ type AddonManifest struct {
 }
 
 var addonManifests = map[string]AddonManifest{
-	"argocd": {
-		URL: func(version *string) string {
-			v := "stable"
-			if version != nil {
-				v = *version
-			}
-			return fmt.Sprintf("https://raw.githubusercontent.com/argoproj/argo-cd/%s/manifests/install.yaml", v)
-		},
-		Namespace: func() *string {
-			x := "argocd"
-			return &x
-		}(),
-	},
 	"stack": {
 		URL: func(version *string) string {
 			v := "latest"
@@ -82,13 +69,7 @@ func (r *ClusterAddonReconciler) DeleteNamespaceIfExists(ctx context.Context, na
 }
 
 func (r *ClusterAddonReconciler) GetData(ctx context.Context) (*corev1.ConfigMap, error) {
-	cf := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kcm-addons",
-			Namespace: "ksctl-system",
-		},
-		Data: map[string]string{},
-	}
+	cf := &corev1.ConfigMap{}
 
 	if err := r.Get(ctx, client.ObjectKey{Namespace: cf.Namespace, Name: cf.Name}, cf); err != nil {
 		if errors.IsNotFound(err) {
