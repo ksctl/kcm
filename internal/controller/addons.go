@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/gookit/goutil/dump"
-	"github.com/ksctl/ksctl/pkg/poller"
+	"github.com/ksctl/ksctl/v2/pkg/poller"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"

@@ -6,7 +6,7 @@ toolchain go1.23.4
 
 require (
 	github.com/gookit/goutil v0.6.18
-	github.com/ksctl/ksctl v2.0.0-rc.1+incompatible
+	github.com/ksctl/ksctl/v2 v2.0.0-rc.1
 	github.com/onsi/ginkgo/v2 v2.21.0
 	github.com/onsi/gomega v1.35.1
 	k8s.io/api v0.32.0
@@ -14,8 +14,6 @@ require (
 	k8s.io/client-go v0.32.0
 	sigs.k8s.io/controller-runtime v0.19.4
 )
-
-replace github.com/ksctl/ksctl => ../ksctl
 
 require (
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect

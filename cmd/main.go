@@ -41,7 +41,7 @@ import (
 
 	managev1 "github.com/ksctl/kcm/api/v1"
 	"github.com/ksctl/kcm/internal/controller"
-	"github.com/ksctl/ksctl/pkg/poller"
+	"github.com/ksctl/ksctl/v2/pkg/poller"
 	// +kubebuilder:scaffold:imports
 )
 
