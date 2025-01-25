@@ -51,7 +51,14 @@ var _ = Describe("ClusterAddon Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: managev1.ClusterAddonSpec{
+						Addons: []managev1.Addon{
+							{
+								Name:    "stack",
+								Version: nil,
+							},
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
