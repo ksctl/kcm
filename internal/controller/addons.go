@@ -71,12 +71,12 @@ func (r *ClusterAddonReconciler) DeleteNamespaceIfExists(ctx context.Context, na
 func (r *ClusterAddonReconciler) GetData(ctx context.Context) (*corev1.ConfigMap, error) {
 	cf := &corev1.ConfigMap{}
 
-	if err := r.Get(ctx, client.ObjectKey{Namespace: cf.Namespace, Name: cf.Name}, cf); err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Namespace: "kcm-ksctl-system", Name: "kcm-addons"}, cf); err != nil {
 		if errors.IsNotFound(err) {
 			cf = &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "kcm-addons",
-					Namespace: "ksctl-system",
+					Namespace: "kcm-ksctl-system",
 				},
 				Data: map[string]string{},
 			}
