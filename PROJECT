@@ -10,7 +10,7 @@ repo: github.com/ksctl/kcm
 resources:
 - api:
     crdVersion: v1
-    namespaced: true
+    namespaced: false
   controller: true
   domain: ksctl.com
   group: manage
