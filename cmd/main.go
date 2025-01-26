@@ -41,6 +41,7 @@ import (
 
 	managev1 "github.com/ksctl/kcm/api/v1"
 	"github.com/ksctl/kcm/internal/controller"
+	"github.com/ksctl/ksctl/v2/pkg/poller"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -239,6 +240,9 @@ func main() {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
+
+	// Start the Ksctl Poller
+	poller.InitSharedGithubReleasePoller()
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {

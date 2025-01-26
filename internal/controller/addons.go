@@ -2,12 +2,14 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 
 	"github.com/gookit/goutil/dump"
+	"github.com/ksctl/ksctl/v2/pkg/poller"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -19,21 +21,21 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type AddonURL func(version *string) string
+type AddonURL func(version string) string
 
 type AddonManifest struct {
+	Org       string
+	Repo      string
 	URL       AddonURL
 	Namespace *string
 }
 
 var addonManifests = map[string]AddonManifest{
 	"stack": {
-		URL: func(version *string) string {
-			v := "latest"
-			if version != nil {
-				v = *version
-			}
-			return fmt.Sprintf("https://github.com/ksctl/ka/releases/download/%s/install.yml", v)
+		Org:  "ksctl",
+		Repo: "ka",
+		URL: func(version string) string {
+			return fmt.Sprintf("https://github.com/ksctl/ka/releases/download/%s/install.yaml", version)
 		},
 	},
 }
@@ -71,12 +73,12 @@ func (r *ClusterAddonReconciler) DeleteNamespaceIfExists(ctx context.Context, na
 func (r *ClusterAddonReconciler) GetData(ctx context.Context) (*corev1.ConfigMap, error) {
 	cf := &corev1.ConfigMap{}
 
-	if err := r.Get(ctx, client.ObjectKey{Namespace: "kcm-ksctl-system", Name: "kcm-addons"}, cf); err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Namespace: "kcm-system", Name: "kcm-addons"}, cf); err != nil {
 		if errors.IsNotFound(err) {
 			cf = &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "kcm-addons",
-					Namespace: "kcm-ksctl-system",
+					Namespace: "kcm-system",
 				},
 				Data: map[string]string{},
 			}
@@ -119,19 +121,27 @@ func (r *ClusterAddonReconciler) HandleAddon(ctx context.Context, addonName stri
 		return nil
 	}
 
-	fmt.Println("~~>", cf.Data, addonName, manifest)
-
 	if manifest.Namespace != nil {
 		if err := r.CreateNamespaceIfNotExists(ctx, *manifest.Namespace); err != nil {
 			return fmt.Errorf("failed to create namespace for ADDON %s: %w", *manifest.Namespace, err)
 		}
 	}
+	addonVersion := ""
 
-	if err := r.downloadAndOperateManifests(ctx, manifest, r.applyResource, addonVer); err != nil {
+	if addonVer == nil {
+		v, err := poller.GetSharedPoller().Get(manifest.Org, manifest.Repo)
+		if err == nil {
+			addonVersion = v[0]
+		}
+	} else {
+		addonVersion = *addonVer
+	}
+
+	if err := r.downloadAndOperateManifests(ctx, manifest, r.applyResource, addonVersion); err != nil {
 		return fmt.Errorf("failed to install addon %s: %w", addonName, err)
 	}
 
-	return r.updateAddonStatus(ctx, cf, addonName, false)
+	return r.updateAddonStatus(ctx, cf, addonName, false, addonVersion)
 }
 
 func (r *ClusterAddonReconciler) HandleAddonDelete(ctx context.Context, addonName string, addonVer *string) error {
@@ -149,7 +159,18 @@ func (r *ClusterAddonReconciler) HandleAddonDelete(ctx context.Context, addonNam
 		return fmt.Errorf("addon %s not found in manifest registry", addonName)
 	}
 
-	if err := r.downloadAndOperateManifests(ctx, manifest, r.deleteResource, addonVer); err != nil {
+	addonVersion := ""
+
+	if addonVer == nil {
+		v := cf.Data[addonName]
+		_v := AddonState{}
+		_ = json.Unmarshal([]byte(v), &_v)
+		addonVersion = _v.Ver
+	} else {
+		addonVersion = *addonVer
+	}
+
+	if err := r.downloadAndOperateManifests(ctx, manifest, r.deleteResource, addonVersion); err != nil {
 		return fmt.Errorf("failed to uninstall addon %s: %w", addonName, err)
 	}
 
@@ -159,14 +180,14 @@ func (r *ClusterAddonReconciler) HandleAddonDelete(ctx context.Context, addonNam
 		}
 	}
 
-	return r.updateAddonStatus(ctx, cf, addonName, true)
+	return r.updateAddonStatus(ctx, cf, addonName, true, addonVersion)
 }
 
 func (r *ClusterAddonReconciler) downloadAndOperateManifests(
 	ctx context.Context,
 	manifest AddonManifest,
 	operator func(ctx context.Context, obj *unstructured.Unstructured) error,
-	version *string,
+	version string,
 ) error {
 	resp, err := http.Get(manifest.URL(version))
 	if err != nil {
@@ -240,12 +261,12 @@ func (r *ClusterAddonReconciler) deleteResource(ctx context.Context, obj *unstru
 
 	err = dr.Delete(ctx, obj.GetName(), opts)
 	if err != nil {
-		fmt.Println("########### Failed to delete resource", obj.GetNamespace(), obj.GetName())
+		fmt.Println("Failed to delete resource", obj.GetNamespace(), obj.GetName())
 		dump.Println(obj)
 		return fmt.Errorf("failed to delete resource: %w", err)
 	}
 
-	fmt.Println("########### Delete resource", obj.GetNamespace(), obj.GetName())
+	fmt.Println("Delete resource", obj.GetNamespace(), obj.GetName())
 
 	return nil
 }
@@ -278,17 +299,17 @@ func (r *ClusterAddonReconciler) applyResource(ctx context.Context, obj *unstruc
 
 	_, err = dr.Apply(ctx, obj.GetName(), obj, opts)
 	if err != nil {
-		fmt.Println("########### Failed to apply resource", obj.GetNamespace(), obj.GetName())
+		fmt.Println("Failed to apply resource", obj.GetNamespace(), obj.GetName())
 		dump.Println(obj)
 		return fmt.Errorf("failed to apply resource: %w", err)
 	}
 
-	fmt.Println("########### Applied resource", obj.GetNamespace(), obj.GetName())
+	fmt.Println("Applied resource", obj.GetNamespace(), obj.GetName())
 
 	return nil
 }
 
-func (r *ClusterAddonReconciler) updateAddonStatus(ctx context.Context, cf *corev1.ConfigMap, addonName string, isDelete bool) error {
+func (r *ClusterAddonReconciler) updateAddonStatus(ctx context.Context, cf *corev1.ConfigMap, addonName string, isDelete bool, addonVer string) error {
 	return retry.OnError(retry.DefaultRetry, errors.IsConflict, func() error {
 		if isDelete {
 			delete(cf.Data, addonName)
@@ -296,8 +317,14 @@ func (r *ClusterAddonReconciler) updateAddonStatus(ctx context.Context, cf *core
 			if cf.Data == nil {
 				cf.Data = map[string]string{}
 			}
-			cf.Data[addonName] = fmt.Sprintf("installed@%s", time.Now().Format(time.RFC3339))
+			v, _ := json.Marshal(AddonState{Ver: addonVer, Timestamp: time.Now().UTC()})
+			cf.Data[addonName] = string(v)
 		}
 		return r.Update(ctx, cf)
 	})
+}
+
+type AddonState struct {
+	Ver       string    `json:"version"`
+	Timestamp time.Time `json:"timestamp"`
 }
