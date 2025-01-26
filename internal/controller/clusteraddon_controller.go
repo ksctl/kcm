@@ -52,8 +52,10 @@ const managerFinalizer string = "finalizer.manage.ksctl.com"
 // +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations;mutatingwebhookconfigurations,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments;daemonsets;statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=namespaces;serviceaccounts;services;configmaps;secrets;pods,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=namespaces;serviceaccounts;services;configmaps;secrets;pods;events,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:urls=/metrics,verbs=get
+// +kubebuilder:rbac:groups=*,resources=*,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=app.ksctl.com,resources=stacks,verbs=*
 
 func (r *ClusterAddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	l := log.FromContext(ctx)

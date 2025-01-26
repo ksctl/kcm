@@ -12,11 +12,24 @@ rules:
   - ""
   resources:
   - configmaps
+  - events
   - namespaces
   - pods
   - secrets
   - serviceaccounts
   - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - '*'
+  resources:
+  - '*'
   verbs:
   - create
   - delete
@@ -50,6 +63,12 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - app.ksctl.com
+  resources:
+  - stacks
+  verbs:
+  - '*'
 - apiGroups:
   - apps
   resources:
