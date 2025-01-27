@@ -47,15 +47,8 @@ const managerFinalizer string = "finalizer.manage.ksctl.com"
 // +kubebuilder:rbac:groups=manage.ksctl.com,resources=clusteraddons,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=manage.ksctl.com,resources=clusteraddons/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=manage.ksctl.com,resources=clusteraddons/finalizers,verbs=update
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings;roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations;mutatingwebhookconfigurations,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=apps,resources=deployments;daemonsets;statefulsets,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=namespaces;serviceaccounts;services;configmaps;secrets;pods;events,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:urls=/metrics,verbs=get
-// +kubebuilder:rbac:groups=*,resources=*,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=app.ksctl.com,resources=stacks,verbs=*
+// +kubebuilder:rbac:groups=*,resources=*,verbs=*
 
 func (r *ClusterAddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	l := log.FromContext(ctx)

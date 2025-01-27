@@ -6,7 +6,7 @@ toolchain go1.23.4
 
 require (
 	github.com/gookit/goutil v0.6.18
-	github.com/ksctl/ksctl/v2 v2.0.0-rc.2
+	github.com/ksctl/ksctl/v2 v2.0.0-rc.3
 	github.com/onsi/ginkgo/v2 v2.21.0
 	github.com/onsi/gomega v1.35.1
 	k8s.io/api v0.32.0
